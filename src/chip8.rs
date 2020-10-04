@@ -83,10 +83,15 @@ impl CHIP8 {
     }
 
     fn execute_opcode(&mut self, opcode: u16) {
+        let ins = opcode & 0xF000;
         let nnn = opcode & 0x0FFF;
-        let nn = (opcode & 0x0FF) as u8;
+        let nn = (opcode & 0x0FF0) as u8;
+        let kk = (opcode & 0x00FF) as u8;
+        let x = (opcode & 0x0F00) as u8;
+        let y = (opcode & 0x00F0) as u8;
+        let n = (opcode & 0x000F) as u8;
         // first we determine the top level instruction
-        match opcode & 0xF000 {
+        match ins {
             0x000 => {
                 // disambiguate the opcode by comparing the last 4 bits
                 match opcode & 0x000F {
@@ -97,6 +102,11 @@ impl CHIP8 {
             }
             0x100 => self.op_1nnn(nnn),
             0x200 => self.op_2nnn(nnn),
+            0x300 => self.op_3or4xkk(ins, x, kk),
+            0x400 => self.op_3or4xkk(ins, x, kk),
+            0x500 => self.op_5xy0(x, y),
+            0x600 => self.op_6xkk(x, kk),
+            0x700 => self.op_7xkk(x, kk),
             _ => panic!("invalid op code: {:#X} at pc: {:#X}", opcode, self.pc),
         }
     }
@@ -122,6 +132,43 @@ impl CHIP8 {
         self.stack[self.sp as usize] = self.pc + 2;
         // then we finally set the program counter to nnn
         self.pc = nnn;
+    }
+
+    // skip instruction if Vx == kk and instruction is 3xkk
+    // or skip instruction if Vx != kk and instruction is 4xkk
+    fn op_3or4xkk(&mut self, ins: u16, x: u8, kk: u8) {
+        match ins {
+            0x300 => {
+                if self.vx[x as usize] == kk {
+                    self.pc = self.pc + 4;
+                }
+            }
+            0x400 => {
+                if self.vx[x as usize] != kk {
+                    self.pc = self.pc + 4;
+                }
+            }
+            _ => panic!("unknown instruction: {:#X} at pc: {:#X}", ins, self.pc),
+        }
+    }
+
+    // skip next instruction if Vx == Vy
+    fn op_5xy0(&mut self, x: u8, y: u8) {
+        if self.vx[x as usize] == self.vx[y as usize] {
+            self.pc = self.pc + 4;
+        }
+    }
+
+    // puts the value of kk into register vx
+    fn op_6xkk(&mut self, x: u8, kk: u8) {
+        self.vx[x as usize] = kk;
+        self.pc = self.pc + 2;
+    }
+
+    // adds the value of kk into vx and stores the result in vx
+    fn op_7xkk(&mut self, x: u8, kk: u8) {
+        self.vx[x as usize] = self.vx[x as usize] | kk;
+        self.pc = self.pc + 2;
     }
 }
 
