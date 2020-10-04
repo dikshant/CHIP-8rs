@@ -4,14 +4,12 @@ const STACK_SIZE: usize = 16;
 
 // CHIP8 is an interpreter to execute instructions
 pub struct CHIP8 {
-    // current opcode being executed
-    opcode: u16,
     // the program counter
     pc: u16,
     // the stack pointer
     // http://devernay.free.fr/hacks/chip8/C8TECH10.HTM#2.2
     sp: u8,
-    // Memory index register
+    // memory index register
     ix: u8,
     // the input keypad
     keypad: [u8; 16],
@@ -19,7 +17,7 @@ pub struct CHIP8 {
     stack: [u16; STACK_SIZE],
     // there are 16 v[0x0 to 0xf] registers, each capable of holding 8 bytes
     vx: [u8; 16],
-    // memory page table is no larger than 4096 bytes with 8 byte pages
+    // memory page table is no larger than 4096 bytes with 1 byte pages
     // note: the first 512 bytes are reserved by the interpreter itself
     memory: memory::Memory,
     // display for this implementation is set to 32 x 64 (height x width) pixels
@@ -33,8 +31,7 @@ pub struct CHIP8 {
 impl CHIP8 {
     // new creates a new CHIP8 instance
     pub fn new() -> Self {
-        let mut chip8 = CHIP8 {
-            opcode: 0u16,
+        let chip8 = CHIP8 {
             pc: 0u16,
             sp: 0u8,
             ix: 0u8,
@@ -55,26 +52,93 @@ impl CHIP8 {
         for (i, &byte) in data.iter().enumerate() {
             // Programs start at 0x200 in memory
             let addr = 0x200 + i;
-            if addr > 4096 {
+            if addr > memory::MAX_MEM_SIZE - 1 || addr < 0x200 {
                 // TODO: error out if we try and load a program
                 // that doesn't fit into memory?
                 break;
             }
-            self.memory.write(addr as u16, byte);
+            match self.memory.write(addr as u16, byte) {
+                Ok(_) => (),
+                Err(_) => panic!("failed to write contents to memory"),
+            };
         }
+    }
+
+    // get's the opcode using the program counter
+    fn fetch_opcode(&mut self) -> u16 {
+        // First we fetch the opcode from memory
+        // Since each page is 1 byte and an opcode is two bytes
+        // we need to grab the two consecutive memory addresses and
+        // combine them to create the opcode
+        let oc_first = match self.memory.read(self.pc) {
+            Ok(oc_first) => oc_first,
+            Err(_) => panic!("failed to read contents from memory"),
+        } as u16;
+        let oc_second = match self.memory.read(self.pc + 1) {
+            Ok(oc_second) => oc_second,
+            Err(_) => panic!("failed to read contents from memory"),
+        } as u16;
+        let opcode: u16 = (oc_first << 8 | oc_second).into();
+        opcode
+    }
+
+    fn execute_opcode(&mut self, opcode: u16) {
+        let nnn = opcode & 0x0FFF;
+        let nn = (opcode & 0x0FF) as u8;
+        // first we determine the top level instruction
+        match opcode & 0xF000 {
+            0x000 => {
+                // disambiguate the opcode by comparing the last 4 bits
+                match opcode & 0x000F {
+                    0x0000 => self.op_00e0(), // Execute 00E0,
+                    0x000E => self.op_00ee(), // Execute 00EE,
+                    _ => panic!("invalid op code: {:#X} at pc: {:#X}", opcode, self.pc),
+                }
+            }
+            0x100 => self.op_1nnn(nnn),
+            0x200 => self.op_2nnn(nnn),
+            _ => panic!("invalid op code: {:#X} at pc: {:#X}", opcode, self.pc),
+        }
+    }
+
+    // clear display
+    fn op_00e0(&mut self) {}
+
+    // return from a subroutine
+    fn op_00ee(&mut self) {}
+
+    // jump to address
+    fn op_1nnn(&mut self, nnn: u16) {
+        self.pc = nnn
+    }
+
+    // call address
+    fn op_2nnn(&mut self, nnn: u16) {
+        // first we increment the stack pointer
+        self.sp = self.sp + 1;
+        // then we put the current program counter on top of the stack
+        // also make sure that we add the size of an opcode (2 bytes) to
+        // the program counter
+        self.stack[self.sp as usize] = self.pc + 2;
+        // then we finally set the program counter to nnn
+        self.pc = nnn;
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::chip8::*;
     #[test]
     fn test_load() {
         let mut chip = CHIP8::new();
         let data: [u8; 4] = [1, 2, 3, 4];
         chip.load(&data);
-        for (i, &byte) in data.iter().enumerate() {
-            assert_eq!(byte, chip.memory.read(0x200 + i as u16));
+        for (i, &want) in data.iter().enumerate() {
+            let got = match chip.memory.read(0x200 + i as u16) {
+                Ok(read) => read,
+                Err(_) => panic!("failed to read contents from memory"),
+            };
+            assert_eq!(want, got);
         }
     }
 }
