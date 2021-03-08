@@ -107,6 +107,22 @@ impl CHIP8 {
             0x500 => self.op_5xy0(x, y),
             0x600 => self.op_6xkk(x, kk),
             0x700 => self.op_7xkk(x, kk),
+            0x800 => {
+                match opcode & 0x000F {
+                    0x800 => self.op_8xy0(x, y),
+                    0x801 => self.op_8xy1(x, y),
+                    0x802 => self.op_8xy2(x, y),
+                    0x803 => self.op_8xy3(x, y),
+                    0x804 => self.op_8xy4(x, y),
+                    0x805 => self.op_8xy5(x, y),
+                    0x806 => self.op_8xy6(x),
+                    0x807 => self.op_8xy7(x, y),
+                    0x80E => self.op_8xye(x),
+                    _=> panic!("invalid op code: {:#X} at pc: {:#X}", opcode, self.pc),
+                }
+            }
+            
+
             _ => panic!("invalid op code: {:#X} at pc: {:#X}", opcode, self.pc),
         }
     }
@@ -159,15 +175,78 @@ impl CHIP8 {
         }
     }
 
-    // puts the value of kk into register vx
+    // puts the value of kk into register Vx
     fn op_6xkk(&mut self, x: u8, kk: u8) {
         self.vx[x as usize] = kk;
         self.pc = self.pc + 2;
     }
 
-    // adds the value of kk into vx and stores the result in vx
+    // adds the value of kk into Vx and stores the result in Vx
     fn op_7xkk(&mut self, x: u8, kk: u8) {
         self.vx[x as usize] = self.vx[x as usize] | kk;
+        self.pc = self.pc + 2;
+    }
+
+    // stores the value of register Vy in register Vx.
+    fn op_8xy0(&mut self, x: u8, y: u8) {
+        self.vx[x as usize] = self.vx[y as usize];
+        self.pc = self.pc + 2;
+    }
+
+    // perform a bitwise OR on the values of Vx and Vy, then stores the result in Vx
+    fn op_8xy1(&mut self, x: u8, y: u8) {
+        self.vx[x as usize] |= self.vx[y as usize];
+        self.pc = self.pc + 2;
+    }
+
+    // perform a bitwise OR on the values of Vx and Vy, then stores the result in Vx
+    fn op_8xy2(&mut self, x: u8, y: u8) {
+        self.vx[x as usize] &= self.vx[y as usize];
+        self.pc = self.pc + 2;
+    }
+
+    // perform a bitwise OR on the values of Vx and Vy, then stores the result in Vx
+    fn op_8xy3(&mut self, x: u8, y: u8) {
+        self.vx[x as usize] ^= self.vx[y as usize];
+        self.pc = self.pc + 2;
+    }
+
+    // sum the values of Vx and Vy, then store the result in Vx, if the sum > 8 bits
+    // set VF to 1 otherwise 0
+    fn op_8xy4(&mut self, x: u8, y: u8) {
+        let sum :u16 = self.vx[x as usize] as u16 + self.vx[y as usize] as u16;
+        self.vx[0x0f] = if sum > 0xFF { 1 } else { 0 };
+        self.vx[x as usize] = sum as u8;
+        self.pc = self.pc + 2;
+    }
+
+    // sub the value of Vy from Vx, then store the result in Vx, if the Vx > Vy
+    // set VF to 1 otherwise 0
+    fn op_8xy5(&mut self, x: u8, y: u8) {
+        self.vx[0x0f] = if self.vx[x as usize] > self.vx[y as usize] { 1 } else {0};
+        self.vx[x as usize] = self.vx[x as usize].wrapping_sub(self.vx[y as usize]);
+        self.pc = self.pc + 2;
+    }
+
+    // set VF to 1 if LSB of Vx is 1, otherwise 0, then divide Vx by 2
+    fn op_8xy6(&mut self, x: u8) {
+        self.vx[0x0f] = self.vx[x as usize] & 0b10000000;
+        self.vx[x as usize] >>= 1;
+        self.pc = self.pc + 2;
+    }
+
+    // sub the value of Vx from Vy, then store the result in Vx, if the Vy > Vx
+    // set VF to 1 otherwise 0
+    fn op_8xy7(&mut self, x: u8, y: u8) {
+        self.vx[0x0f] = if self.vx[y as usize] > self.vx[x as usize] { 1 } else { 0 };
+        self.vx[x as usize] = self.vx[y as usize].wrapping_sub(self.vx[x as usize]);
+        self.pc = self.pc + 2;
+    }
+
+     // set VF to 1 if LSB of Vx is 1, otherwise 0, then multiply Vx by 2
+    fn op_8xye(&mut self, x: u8) {
+        self.vx[0x0f] = self.vx[x as usize] & 0b10000000;
+        self.vx[x as usize] >>= 1;
         self.pc = self.pc + 2;
     }
 }
