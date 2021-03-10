@@ -23,7 +23,7 @@ pub struct CHIP8 {
     // note: the first 512 bytes are reserved by the interpreter itself
     memory: memory::Memory,
     // display for this implementation is set to 32 x 64 (height x width) pixels
-    display: [[u8; 32]; 64],
+    display: display::Display,
     // delay and sound timers that are decremented at the rate of 60Hz when > 0
     delay_timer: u8,
     sound_timer: u8,
@@ -41,7 +41,7 @@ impl CHIP8 {
             stack: [0u16; 16],
             vx: [0; 16],
             memory: memory::Memory::new(),
-            display: [[0; 32]; 64],
+            display: display::Display::new(),
             delay_timer: 0u8,
             sound_timer: 0u8,
         };
