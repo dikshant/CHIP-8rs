@@ -1,4 +1,6 @@
 use crate::memory;
+use crate::display;
+use rand::Rng;
 
 const STACK_SIZE: usize = 16;
 
@@ -84,7 +86,7 @@ impl CHIP8 {
 
     fn execute_opcode(&mut self, opcode: u16) {
         let ins = opcode & 0xF000;
-        let nnn = opcode & 0x0FFF;
+        let nnn = (opcode & 0x0FFF) as u8;
         let nn = (opcode & 0x0FF0) as u8;
         let kk = (opcode & 0x00FF) as u8;
         let x = (opcode & 0x0F00) as u8;
@@ -97,13 +99,13 @@ impl CHIP8 {
                 match opcode & 0x000F {
                     0x0000 => self.op_00e0(), // Execute 00E0,
                     0x000E => self.op_00ee(), // Execute 00EE,
-                    _ => panic!("invalid op code: {:#X} at pc: {:#X}", opcode, self.pc),
+                    _ => (),
                 }
             }
             0x100 => self.op_1nnn(nnn),
             0x200 => self.op_2nnn(nnn),
-            0x300 => self.op_3or4xkk(ins, x, kk),
-            0x400 => self.op_3or4xkk(ins, x, kk),
+            0x300 => self.op_3xkk( x, kk),
+            0x400 => self.op_4xkk( x, kk),
             0x500 => self.op_5xy0(x, y),
             0x600 => self.op_6xkk(x, kk),
             0x700 => self.op_7xkk(x, kk),
@@ -118,12 +120,14 @@ impl CHIP8 {
                     0x806 => self.op_8xy6(x),
                     0x807 => self.op_8xy7(x, y),
                     0x80E => self.op_8xye(x),
-                    _=> panic!("invalid op code: {:#X} at pc: {:#X}", opcode, self.pc),
+                    _=> (),
                 }
             }
-            
-
-            _ => panic!("invalid op code: {:#X} at pc: {:#X}", opcode, self.pc),
+            0x900 => self.op_9xy0(x, y),
+            0xa00 => self.op_annn(nnn),
+            0xb00 => self.op_bnnn(nnn),
+            0xc00 => self.op_cxkk(x, kk),
+            _ => (),
         }
     }
 
@@ -131,15 +135,18 @@ impl CHIP8 {
     fn op_00e0(&mut self) {}
 
     // return from a subroutine
-    fn op_00ee(&mut self) {}
+    fn op_00ee(&mut self) {
+        self.sp -= 1;
+        self.pc = self.stack[self.sp as usize]
+    }
 
     // jump to address
-    fn op_1nnn(&mut self, nnn: u16) {
-        self.pc = nnn
+    fn op_1nnn(&mut self, nnn: u8) {
+        self.pc = nnn as u16
     }
 
     // call address
-    fn op_2nnn(&mut self, nnn: u16) {
+    fn op_2nnn(&mut self, nnn: u8) {
         // first we increment the stack pointer
         self.sp = self.sp + 1;
         // then we put the current program counter on top of the stack
@@ -147,24 +154,20 @@ impl CHIP8 {
         // the program counter
         self.stack[self.sp as usize] = self.pc + 2;
         // then we finally set the program counter to nnn
-        self.pc = nnn;
+        self.pc = nnn as u16;
     }
 
     // skip instruction if Vx == kk and instruction is 3xkk
-    // or skip instruction if Vx != kk and instruction is 4xkk
-    fn op_3or4xkk(&mut self, ins: u16, x: u8, kk: u8) {
-        match ins {
-            0x300 => {
-                if self.vx[x as usize] == kk {
-                    self.pc = self.pc + 4;
-                }
-            }
-            0x400 => {
-                if self.vx[x as usize] != kk {
-                    self.pc = self.pc + 4;
-                }
-            }
-            _ => panic!("unknown instruction: {:#X} at pc: {:#X}", ins, self.pc),
+    fn op_3xkk(&mut self, x: u8, kk: u8) {
+        if self.vx[x as usize] == kk {
+            self.pc = self.pc + 4;
+        }
+    }
+
+    // skip instruction if Vx != kk and instruction is 4xkk
+    fn op_4xkk(&mut self, x: u8, kk: u8) {
+        if self.vx[x as usize] != kk {
+            self.pc = self.pc + 4;
         }
     }
 
@@ -248,6 +251,27 @@ impl CHIP8 {
         self.vx[0x0f] = self.vx[x as usize] & 0b10000000;
         self.vx[x as usize] >>= 1;
         self.pc = self.pc + 2;
+    }
+
+    // skip next instruction if Vx != Vy.
+    fn op_9xy0(&mut self, x: u8, y:u8) {
+        self.pc = if self.vx[x as usize] != self.vx[y as usize] {self.pc + 4} else {return};
+    }
+
+    // sets the value of the I register to nnn.
+    fn op_annn(&mut self, nnn: u8) {
+        self.ix = nnn;
+    }
+
+    // jumps to the location of nnn + v0
+    fn op_bnnn(&mut self, nnn: u8) {
+        self.pc = (nnn + self.vx[0]).into();
+    }
+
+    // sets vx to random byte AND kk
+    fn op_cxkk(&mut self, x: u8, kk : u8) {
+        let mut rng = rand::thread_rng();
+        self.vx[x as usize] = rng.gen::<u8>() & kk;
     }
 }
 
